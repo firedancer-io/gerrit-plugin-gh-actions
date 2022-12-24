@@ -1,6 +1,6 @@
 alias(
     name = "plugin",
-    actual = "gerrit-plugin-gh-actions",
+    actual = "gerrit-plugin-gh-actions_deploy.jar",
 )
 
 java_binary(
