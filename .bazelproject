@@ -1,0 +1,9 @@
+directories:
+  .
+
+targets:
+  //:all
+
+java_language_level: 11
+
+workspace_type: java
