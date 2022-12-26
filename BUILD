@@ -1,14 +1,12 @@
 alias(
     name = "plugin",
-    actual = "gerrit-plugin-gh-actions_deploy.jar",
+    actual = "github-actions_deploy.jar",
 )
 
 java_binary(
-    name = "gerrit-plugin-gh-actions",
+    name = "github-actions",
     srcs = glob(["src/main/java/**/*.java"]),
-    deps = [
-        "@gerrit_extension_api//jar:neverlink",
-    ],
+    create_executable = False,
     deploy_manifest_lines = [
         "Implementation-Title: Gerrit extension for GitHub Actions",
         "Implementation-Version: 0.1",
@@ -19,5 +17,8 @@ java_binary(
     ],
     main_class = "Dummy",
     visibility = ["//visibility:public"],
-    create_executable = False,
+    deps = [
+        "@gerrit_plugin_api//jar:neverlink",
+        "@maven//:javax_servlet_javax_servlet_api",
+    ],
 )
