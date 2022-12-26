@@ -15,6 +15,10 @@ Specifically, it implements the following two tasks.
 1. Dispatching GitHub Actions workflows for code changes on Gerrit
 2. Updating Gerrit review labels to reflect workflow results
 
+Further info:
+- [Security Policy](./SECURITY.md)
+- [Internals](./HACK.md)
+
 ## Architecture
 
 This module compiles to a Java binary (`.jar`) to be loaded as a Gerrit plugin.
@@ -24,6 +28,70 @@ However, extensions support a much wider range of Gerrit versions than plugins w
 
 On load, the module registers listeners for various Gerrit events.
 It also injects a HTTP servlet exposing a handler for GitHub webhooks.
+
+## Installation
+
+### Build
+
+Build the plugin from source.
+
+This requires
+- JDK
+- an installation of Bazel 6.0 or greater, or Bazelisk (preferred)
+- an Internet connection to fetch build scripts from GitHub and dependencies from Maven
+
+```shell
+bazel build //:plugin
+```
+
+### Plugin
+
+Copy plugin file to your Gerrit installation.
+
+```shell
+# Change path to your Gerrit installation
+export GERRIT_SITE=~/gerrit_testsite
+
+# Copy plugin file
+cp -L ./bazel-bin/github-actions_deploy.jar "$GERRIT_SITE"/plugin/github-actions.jar
+```
+
+### Server Config
+
+Add GitHub secrets to your `secret.config` file.
+
+```shell
+cat <<'EOF' >> "$GERRIT_SITE"/etc/secret.config
+[plugin "github-actions"]
+  webhook-secret = "..."
+EOF
+```
+
+### Project Config
+
+Project-specific config is located at the `refs/meta/config` Git ref.
+
+```shell
+# Checkout project config
+git fetch gerrit refs/meta/config
+git checkout FETCH_HEAD
+
+# Add project-specific config
+cat <<'EOF' > ./github-actions.config
+# Map Gerrit project to GitHub repo
+[repo]
+  github-origin = github.com
+  owner = firedancer-io
+  repo = firedancer
+EOF
+
+# Commit config change
+git add ./github-actions.config
+git commit
+
+# Open change request for config change
+git push gerrit HEAD:refs/for/refs/meta/config
+```
 
 ## Usage
 
@@ -143,24 +211,3 @@ sequenceDiagram
 
   deactivate GitHub
 ```
-
-## Security
-
-Please familiarize yourself with the security considerations of this plugin before deploying it.
-
-- Allowing unauthorized users to dispatch CI workflows is a security risk.
-  For example, an attacker could attempt to poison the CI cache to induce side effects.
-
-  We therefore recommend:
-  - Configure the "Allow-CI" label to be _not satisfied_ by default.
-    This will force an authorized user to selectively approve CI runs
-  - Sparingly use _override conditions_ to exempt trusted users from this rule.
-
-- Ensure that the "Allow-CI" and "CI-Result" labels are reset if a new revision is pushed to a review (`copyCondition: false`).
-
-- This plugin exposes a public HTTP API on your Gerrit server for GitHub webhooks.
-  - Follow general web hosting best practices (e.g. deploy a web application firewall).
-  - Since anyone could call this API, a _secret token_ is used to authenticate that the source of requests is indeed GitHub.
-    For more info, refer to [_GitHub: Securing your webhooks_](https://docs.github.com/en/developers/webhooks-and-events/webhooks/securing-your-webhooks).
-
-Please responsibly disclose any further security concerns at `firedancer-devs [AT] jumptrading [DOT] com`.
