@@ -23,9 +23,6 @@ Further info:
 
 This module compiles to a Java binary (`.jar`) to be loaded as a Gerrit plugin.
 
-It uses Gerrit's Extension API which is similar to the more commonly used Plugin API.
-However, extensions support a much wider range of Gerrit versions than plugins which reduces maintenance overhead.
-
 On load, the module registers listeners for various Gerrit events.
 It also injects a HTTP servlet exposing a handler for GitHub webhooks.
 
@@ -56,42 +53,6 @@ export GERRIT_SITE=~/gerrit_testsite
 cp -L ./bazel-bin/github-actions_deploy.jar "$GERRIT_SITE"/plugin/github-actions.jar
 ```
 
-### Server Config
-
-Add GitHub secrets to your `secret.config` file.
-
-```shell
-cat <<'EOF' >> "$GERRIT_SITE"/etc/secret.config
-[plugin "github-actions"]
-  webhook-secret = "..."
-EOF
-```
-
-### Project Config
-
-Project-specific config is located at the `refs/meta/config` Git ref.
-
-```shell
-# Checkout project config
-git fetch gerrit refs/meta/config
-git checkout FETCH_HEAD
-
-# Add project-specific config
-cat <<'EOF' > ./github-actions.config
-# Map Gerrit project to GitHub repo
-[repo]
-  github-origin = github.com
-  owner = firedancer-io
-  repo = firedancer
-EOF
-
-# Commit config change
-git add ./github-actions.config
-git commit
-
-# Open change request for config change
-git push gerrit HEAD:refs/for/refs/meta/config
-```
 
 ## Usage
 
@@ -210,4 +171,54 @@ sequenceDiagram
   ActionsPlugin-->>-GitHub: OK
 
   deactivate GitHub
+```
+
+## Config Reference
+
+The easiest way to update your config is to re-run the Gerrit install wizard.
+
+Alternatively, you can edit config files directly as follows.
+
+### Server Config
+
+Add GitHub secrets to your `secret.config` file.
+
+```shell
+cat <<'EOF' >> "$GERRIT_SITE"/etc/gerrit.config
+[plugin "github-actions"]
+  github-origin = github.com
+  app-id = ...
+  private-key-file = ...
+EOF
+
+cat <<'EOF' >> "$GERRIT_SITE"/etc/secret.config
+[plugin "github-actions"]
+  webhook-secret = ...
+EOF
+```
+
+### Project Config
+
+Project-specific config is located at the `refs/meta/config` Git ref.
+
+```shell
+# Checkout project config
+git fetch gerrit refs/meta/config
+git checkout FETCH_HEAD
+
+# Add project-specific config
+cat <<'EOF' >> ./project.config
+[plugin "github-actions"]
+  owner = firedancer-io
+  repo = firedancer-ci
+  workflow = test
+  workflow-ref = main
+EOF
+
+# Commit config change
+git add ./project.config
+git commit
+
+# Open change request for config change
+git push gerrit HEAD:refs/for/refs/meta/config
 ```

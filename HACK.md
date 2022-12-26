@@ -7,8 +7,7 @@ As of 2022-12, there are two common flavors of Gerrit plugins, both using Bazel:
 As this plugin covers a niche use-case, it's not going to be merged in-tree anytime soon.
 Therefore, we maintain it as an out-of-tree module.
 
-There are flaws with the `bazlets` approach, however:
-- The Gerrit extension API is unsupported (Fixed by https://gerrit-review.googlesource.com/c/bazlets/+/355594)
+Known caveats using `bazlets`:
 - The `maven_jar` rule is not exported by `bazlets`, so we have to mix Bazel's own Maven build system with `rules_jvm_external`.
 
 ## plugins_github

@@ -1,8 +1,26 @@
+/*
+ * Copyright (C) 2015 The Android Open Source Project
+ * Copyright (C) 2022 Jump Crypto
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package io.firedancer.contrib.gerrit.plugins.gha.webhooks;
 
 import static javax.servlet.http.HttpServletResponse.SC_UNAUTHORIZED;
 
 import com.google.common.base.Strings;
+import com.google.common.flogger.FluentLogger;
 import com.google.gerrit.extensions.registration.DynamicItem;
 import com.google.gerrit.server.events.EventDispatcher;
 import com.google.gerrit.server.permissions.PermissionBackendException;
@@ -29,15 +47,13 @@ import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 @Singleton
 public class WebhookServlet extends HttpServlet {
   private static final long MAX_REQUEST_BODY_SIZE = 131072;
   private static final String HUB_SIGNATURE_256_PREFIX = "sha256=";
 
-  private static final Logger logger = LoggerFactory.getLogger(WebhookServlet.class);
+  private static final FluentLogger log = FluentLogger.forEnclosingClass();
 
   private final Credentials creds;
   private final DynamicItem<EventDispatcher> eventDispatcher;
@@ -50,7 +66,7 @@ public class WebhookServlet extends HttpServlet {
     this.gson = gson;
 
     if (Strings.isNullOrEmpty(this.creds.getWebhookSecret())) {
-      logger.error("webhook-secret not configured");
+      log.atWarning().log("webhook-secret not configured");
     }
   }
 
@@ -59,7 +75,7 @@ public class WebhookServlet extends HttpServlet {
       throws ServletException, IOException {
     // If webhook secret is not available, skip.
     if (Strings.isNullOrEmpty(creds.getWebhookSecret())) {
-      logger.debug("webhook-secret not configured");
+      log.atWarning().log("webhook-secret not configured");
       resp.sendError(
           HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Misconfigured GitHub webhook server");
       return;
@@ -68,7 +84,7 @@ public class WebhookServlet extends HttpServlet {
     // If auth header is missing, skip.
     String signature = req.getHeader("x-hub-signature-256");
     if (Strings.isNullOrEmpty(signature)) {
-      logger.debug("request missing signature header");
+      log.atFiner().log("request missing signature header");
       resp.sendError(SC_UNAUTHORIZED, "Missing GitHub request signature");
       return;
     }
@@ -95,7 +111,7 @@ public class WebhookServlet extends HttpServlet {
 
     // If request signature invalid, skip.
     if (!signatureValid) {
-      logger.debug("Invalid webhook signature");
+      log.atFiner().log("Invalid webhook signature");
       resp.sendError(SC_UNAUTHORIZED);
       return;
     }
@@ -103,7 +119,7 @@ public class WebhookServlet extends HttpServlet {
     // Find event type.
     String eventName = req.getHeader("x-github-event");
     if (eventName == null) {
-      logger.error("Received webhook without x-github-event header");
+      log.atWarning().log("Received webhook without x-github-event header (authenticated)");
       resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing event name header");
       return;
     }
@@ -113,10 +129,12 @@ public class WebhookServlet extends HttpServlet {
     try {
       obj = gson.fromJson(body, JsonObject.class);
     } catch (JsonSyntaxException e) {
-      logger.error("Received invalid JSON (authenticated)");
+      log.atWarning().log("Received invalid JSON (authenticated)");
       resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON");
       return;
     }
+
+    log.atFiner().log("Received webhook (%s)", eventName);
 
     // Send event to stream.
     WebhookEvent event = new WebhookEvent(eventName, obj);
@@ -140,7 +158,7 @@ public class WebhookServlet extends HttpServlet {
     byte[] payload = body.getBytes(encoding == null ? "UTF-8" : encoding);
 
     if (!StringUtils.startsWith(signatureHeader, HUB_SIGNATURE_256_PREFIX)) {
-      logger.warn("Unsupported webhook signature type: {}", signatureHeader);
+      log.atFiner().log("Unsupported webhook signature type: %s", signatureHeader);
       return false;
     }
     byte[] signature;
@@ -148,7 +166,7 @@ public class WebhookServlet extends HttpServlet {
       signature =
           Hex.decodeHex(signatureHeader.substring(HUB_SIGNATURE_256_PREFIX.length()).toCharArray());
     } catch (DecoderException e) {
-      logger.error("Invalid signature: {}", signatureHeader);
+      log.atFiner().log("Invalid signature");
       return false;
     }
     return MessageDigest.isEqual(signature, getExpectedSignature256(payload));

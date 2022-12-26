@@ -39,6 +39,7 @@ load("@rules_jvm_external//:defs.bzl", "maven_install")
 maven_install(
     artifacts = [
         "javax.servlet:javax.servlet-api:3.1.0",
+        "com.auth0:java-jwt:4.2.1",
     ],
     repositories = [
         "https://repo1.maven.org/maven2",

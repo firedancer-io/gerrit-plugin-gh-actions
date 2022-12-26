@@ -1,28 +1,41 @@
+/*
+ * Copyright (C) 2022 Jump Crypto
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package io.firedancer.contrib.gerrit.plugins.gha.repos;
 
-import com.google.common.base.Strings;
+import com.google.common.flogger.FluentLogger;
 import com.google.gerrit.entities.Project;
 import com.google.gerrit.entities.RefNames;
 import com.google.gerrit.extensions.annotations.PluginName;
 import com.google.gerrit.extensions.events.GitReferenceUpdatedListener;
 import com.google.gerrit.extensions.events.NewProjectCreatedListener;
 import com.google.gerrit.extensions.events.ProjectDeletedListener;
+import com.google.gerrit.server.config.PluginConfig;
 import com.google.gerrit.server.config.PluginConfigFactory;
 import com.google.gerrit.server.project.NoSuchProjectException;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import io.firedancer.contrib.gerrit.plugins.gha.config.GhaProjectConfig;
 import org.eclipse.jgit.errors.ConfigInvalidException;
-import org.eclipse.jgit.lib.Config;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /** Keeps a mapping from GitHub repos to Gerrit projects. */
 @Singleton
 public class RepoManager
     implements NewProjectCreatedListener, ProjectDeletedListener, GitReferenceUpdatedListener {
-  private static final Logger logger = LoggerFactory.getLogger(RepoManager.class);
+  private static final FluentLogger log = FluentLogger.forEnclosingClass();
 
   private final PluginConfigFactory cfg;
   private final RepoMapping mapping;
@@ -44,7 +57,7 @@ public class RepoManager
   /** Reacts to deletion of a project to update mapping. */
   @Override
   public void onProjectDeleted(ProjectDeletedListener.Event event) {
-    mapping.removeByProjectName(Project.nameKey(event.getProjectName()));
+    mapping.remove(Project.nameKey(event.getProjectName()));
   }
 
   /** Reacts to changes in the project's GitHub mapping config. */
@@ -59,42 +72,27 @@ public class RepoManager
     try {
       refreshConfig(projectName);
     } catch (NoSuchProjectException e) {
-      logger.error(
-          "Tried to update config of project {}, but project does not exist", projectName.get());
+      log.atWarning().log(
+          "Tried to update config of project %s, but project does not exist", projectName.get());
     } catch (ConfigInvalidException e) {
-      logger.error("Invalid GitHub config in project {}: {}", projectName, e.getMessage());
+      log.atWarning().log("Invalid GitHub config in project %s: %s", projectName, e.getMessage());
     }
   }
 
   private void refreshConfig(Project.NameKey projectName)
       throws NoSuchProjectException, ConfigInvalidException {
     // Get config file from meta
-    Config config = cfg.getProjectPluginConfig(projectName, pluginName);
+    PluginConfig pluginConfig = cfg.getFromProjectConfig(projectName, pluginName);
+    GhaProjectConfig projectConfig = GhaProjectConfig.fromPluginConfig(projectName, pluginConfig);
 
-    // Get project repo settings.
-    String remote = config.getString("repo", null, "github-origin");
-    if (Strings.isNullOrEmpty(remote)) {
-      remote = "github.com";
-    }
-    String owner = config.getString("repo", null, "owner");
-    if (Strings.isNullOrEmpty(owner)) {
-      throw new ConfigInvalidException("Missing repo.owner key");
-    }
-    String repo = config.getString("repo", null, "repo");
-    if (Strings.isNullOrEmpty(repo)) {
-      throw new ConfigInvalidException("Missing repo.repo key");
+    // Bail if config is incomplete
+    if (projectConfig == null) {
+      mapping.remove(projectName);
+      log.atWarning().log("Failed to construct GitHub Actions config for project %s", projectName);
+      return;
     }
 
-    // Assemble repo URL.
-    String repoUrl =
-        "https://"
-            + remote
-            + "/"
-            + URLEncoder.encode(owner, StandardCharsets.UTF_8)
-            + "/"
-            + URLEncoder.encode(repo, StandardCharsets.UTF_8);
-
-    // Update mapping.
-    mapping.put(projectName, repoUrl);
+    // Write config to cache
+    mapping.put(projectName, projectConfig);
   }
 }
